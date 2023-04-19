@@ -22,10 +22,6 @@ add_executable (sz_compress_2d_with_eb sz_compress_2d_with_eb.cpp)
 target_include_directories (sz_compress_2d_with_eb PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries (sz_compress_2d_with_eb cpsz)
 
-
-# find_package(FTK REQUIRED HINTS "/home/mxi235/CP/ftk/install/lib64/cmake/FTK/")
-
-
 add_executable (cp_extraction_2d_sos cp_extraction_2d_sos.cpp)
 target_include_directories (cp_extraction_2d_sos PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries (cp_extraction_2d_sos FTK::libftk cpsz zstd::libzstd_shared )

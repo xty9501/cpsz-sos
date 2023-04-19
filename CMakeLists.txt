@@ -13,4 +13,3 @@ find_package(FTK REQUIRED HINTS "${PROJECT_SOURCE_DIR}/external/ftk/install/lib/
 add_subdirectory (src)
 add_subdirectory (parallel_src)
 add_subdirectory (test)
-
