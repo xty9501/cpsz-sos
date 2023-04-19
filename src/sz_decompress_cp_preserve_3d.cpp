@@ -13,7 +13,7 @@ sz_decompress_cp_preserve_3d_online_log(const unsigned char * compressed, size_t
 	const unsigned char * compressed_pos = compressed;
 	int base = 0;
 	read_variable_from_src(compressed_pos, base);
-	printf("base = %d\n", base);
+	// printf("base = %d\n", base);
 	int intv_radius = 0;
 	read_variable_from_src(compressed_pos, intv_radius);
 	size_t sign_map_size = (num_elements - 1)/8 + 1;
@@ -84,7 +84,7 @@ sz_decompress_cp_preserve_3d_online_log(const unsigned char * compressed, size_t
 			}
 		}
 	}
-	printf("recover data done\n");
+	// printf("recover data done\n");
 	eb_zero_data_pos = eb_zero_data;
 	for(int i=0; i<num_elements; i++){
 		if(unpred_data_indices.count(i)){
@@ -139,7 +139,7 @@ sz_decompress_cp_preserve_3d_online_fp(const unsigned char * compressed, size_t 
 	read_variable_from_src(compressed_pos, vector_field_scaling_factor);
 	int base = 0;
 	read_variable_from_src(compressed_pos, base);
-	printf("base = %d\n", base);
+	// printf("base = %d\n", base);
 	T threshold = 0;
 	read_variable_from_src(compressed_pos, threshold);
 	int intv_radius = 0;
@@ -156,7 +156,7 @@ sz_decompress_cp_preserve_3d_online_fp(const unsigned char * compressed, size_t 
 	size_t data_quant_num = 0;
 	read_variable_from_src(compressed_pos, data_quant_num);
 	int * data_quant_index = Huffman_decode_tree_and_data(2*capacity, data_quant_num, compressed_pos);
-	printf("pos = %ld\n", compressed_pos - compressed);
+	// printf("pos = %ld\n", compressed_pos - compressed);
 	T * U_fp = (T *) malloc(num_elements*sizeof(T));
 	T * V_fp = (T *) malloc(num_elements*sizeof(T));
 	T * W_fp = (T *) malloc(num_elements*sizeof(T));
@@ -204,7 +204,7 @@ sz_decompress_cp_preserve_3d_online_fp(const unsigned char * compressed, size_t 
 			}
 		}
 	}
-	printf("recover data done\n");
+	// printf("recover data done\n");
 	free(eb_quant_index);
 	free(data_quant_index);
 	U = (T_data *) malloc(num_elements*sizeof(T_data));
@@ -286,7 +286,7 @@ sz_decompress_cp_preserve_3d_unstructured(const unsigned char * compressed, int 
 		}
 		data_pos += 3;
 	}
-	printf("recover data done\n");
+	// printf("recover data done\n");
 	eb_zero_data_pos = eb_zero_data;
 	unsigned char * sign_pos = sign_map;
 	for(int i=0; i<n; i++){
