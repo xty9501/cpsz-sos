@@ -448,6 +448,11 @@ update_value(double v[4][3], int local_id, int global_id, const T_data * U, cons
 }
 
 template<typename T_data, typename T_fp>
+static inline T_data convert_fp_to_float(T_fp fp, T_fp vector_field_scaling_factor){
+	return fp * (T_data) 1.0 / vector_field_scaling_factor;
+}
+
+template<typename T_data, typename T_fp>
 static vector<int> 
 compute_cp_and_type(const T_fp * U_fp, const T_fp * V_fp, const T_fp * W_fp, const T_data * U, const T_data * V, const T_data * W, int r1, int r2, int r3){
 	// check cp for all cells
@@ -1981,3 +1986,211 @@ sz_compress_cp_preserve_sos_3d_online_fp_parallel_lossless_border(const T_data *
 template
 unsigned char *
 sz_compress_cp_preserve_sos_3d_online_fp_parallel_lossless_border(const float * U, const float * V, const float * W, size_t r1, size_t r2, size_t r3, size_t& compressed_size, bool transpose, double max_pwr_eb);
+
+template<typename T_data>
+unsigned char *
+sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all_parallel_lossless_border(const T_data * U, const T_data * V, const T_data * W, size_t r1, size_t r2, size_t r3, size_t& compressed_size, bool transpose, double max_pwr_eb, double max_factor){
+	// std::cout << "sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all" << std::endl;
+	using T = int64_t;
+	size_t num_elements = r1 * r2 * r3;
+	T * U_fp = (T *) malloc(num_elements*sizeof(T));
+	T * V_fp = (T *) malloc(num_elements*sizeof(T));
+	T * W_fp = (T *) malloc(num_elements*sizeof(T));
+	T range = 0;
+	T vector_field_scaling_factor = convert_to_fixed_point(U, V, W, num_elements, U_fp, V_fp, W_fp, range);
+	// printf("fixed point range = %lld\n", range);
+	int * eb_quant_index = (int *) malloc(num_elements*sizeof(int));
+	int * data_quant_index = (int *) malloc(3*num_elements*sizeof(int));
+	int * eb_quant_index_pos = eb_quant_index;
+	int * data_quant_index_pos = data_quant_index;
+	// next, row by row
+	const int base = 2;
+	const double log_of_base = log2(base);
+	const int capacity = 65536;
+	const int intv_radius = (capacity >> 1);
+	T max_eb = range * max_pwr_eb;
+	unpred_vec<T_data> unpred_data;
+	ptrdiff_t dim0_offset = r2 * r3;
+	ptrdiff_t dim1_offset = r3;
+	ptrdiff_t cell_dim0_offset = (r2-1) * (r3-1);
+	ptrdiff_t cell_dim1_offset = r3-1;
+	int simplex_offset[24];
+	int index_offset[24][3][3];
+	int offset[24][3];
+	compute_offset(dim0_offset, dim1_offset, cell_dim0_offset, cell_dim1_offset, simplex_offset, index_offset, offset);
+	double coordinates_d[24][4][3];
+	for(int i=0; i<24; i++){
+		for(int j=0; j<4; j++){
+			for(int k=0; k<3; k++){
+				coordinates_d[i][j][k] = coordinates[i][j][k];
+			}
+		}
+	}
+	T * cur_U_pos = U_fp;
+	T * cur_V_pos = V_fp;
+	T * cur_W_pos = W_fp;
+	// dec_data
+	T_data * dec_U = (T_data *) malloc(num_elements*sizeof(T_data));
+	T_data * dec_V = (T_data *) malloc(num_elements*sizeof(T_data));
+	T_data * dec_W = (T_data *) malloc(num_elements*sizeof(T_data));
+	memcpy(dec_U, U, num_elements*sizeof(T_data));
+	memcpy(dec_V, V, num_elements*sizeof(T_data));
+	memcpy(dec_W, W, num_elements*sizeof(T_data));
+	T threshold = 1;
+	// check cp for all cells
+	// std::cout << "start cp checking\n";
+	vector<int> cp_type = compute_cp_and_type(U_fp, V_fp, W_fp, U, V, W, r1, r2, r3);
+	// std::cout << "start compression\n";
+	for(int i=0; i<r1; i++){
+		for(int j=0; j<r2; j++){
+			for(int k=0; k<r3; k++){
+				T abs_eb = max_eb;
+				bool unpred_flag = false;
+				bool verification_flag = false;
+				if(k == 0 || k == r3-1 || j == 0 || j == r2-1 || i == 0 || i == r1-1){
+					unpred_flag = true;
+					verification_flag = true;
+				}
+				T decompressed[3];
+				// compress data and then verify
+				while(!verification_flag){
+					*eb_quant_index_pos = eb_exponential_quantize(abs_eb, base, log_of_base, threshold);
+					unpred_flag = false;
+					// compress vector fields
+					T * data_pos[3] = {cur_U_pos, cur_V_pos, cur_W_pos};
+					for(int p=0; p<3; p++){
+						T * cur_data_pos = data_pos[p];
+						T cur_data = *cur_data_pos;
+						// get adjacent data and perform Lorenzo
+						/*
+							d6	X
+							d4	d5
+							d2	d3
+							d0	d1
+						*/
+						T d0 = (i && j && k) ? cur_data_pos[- dim0_offset - dim1_offset - 1] : 0;
+						T d1 = (i && j) ? cur_data_pos[- dim0_offset - dim1_offset] : 0;
+						T d2 = (i && k) ? cur_data_pos[- dim0_offset - 1] : 0;
+						T d3 = (i) ? cur_data_pos[- dim0_offset] : 0;
+						T d4 = (j && k) ? cur_data_pos[- dim1_offset - 1] : 0;
+						T d5 = (j) ? cur_data_pos[- dim1_offset] : 0;
+						T d6 = (k) ? cur_data_pos[- 1] : 0;
+						T pred = d0 + d3 + d5 + d6 - d1 - d2 - d4;
+						T diff = cur_data - pred;
+						T quant_diff = std::abs(diff) / abs_eb + 1;
+						if(quant_diff < capacity){
+							quant_diff = (diff > 0) ? quant_diff : -quant_diff;
+							int quant_index = (int)(quant_diff/2) + intv_radius;
+							data_quant_index_pos[p] = quant_index;
+							decompressed[p] = pred + 2 * (quant_index - intv_radius) * abs_eb; 
+						}
+						else{
+							unpred_flag = true;
+							break;
+						}
+					}
+					if(unpred_flag) break;
+					// verify cp in six adjacent triangles
+					verification_flag = true;
+					for(int n=0; n<24; n++){
+						bool in_mesh = true;
+						for(int p=0; p<3; p++){
+							// reversed order!
+							if(!(in_range(i + index_offset[n][p][2], (int)r1) && in_range(j + index_offset[n][p][1], (int)r2) && in_range(k + index_offset[n][p][0], (int)r3))){
+								in_mesh = false;
+								break;
+							}
+						}
+						if(in_mesh){
+							int indices[4];
+							T vf[4][3];
+							int vertex_index = i*dim0_offset + j*dim1_offset + k;
+							for(int p=0; p<3; p++){
+								indices[p] = vertex_index + offset[n][p];
+							}
+							indices[3] = vertex_index;
+							for(int p=0; p<3; p++){
+								vf[p][0] = U_fp[indices[p]];
+								vf[p][1] = V_fp[indices[p]];
+								vf[p][2] = W_fp[indices[p]];
+							}
+							vf[3][0] = decompressed[0], vf[3][1] = decompressed[1], vf[3][2] = decompressed[2];
+							double v[4][3];
+							// use decompressed/original data for other vertices
+							for(int p=0; p<3; p++){
+								v[p][0] = dec_U[indices[p]];
+								v[p][1] = dec_V[indices[p]];
+								v[p][2] = dec_W[indices[p]];
+							}
+							// compute decompressed data for current vertex
+							for(int p=0; p<3; p++){
+								v[3][p] = convert_fp_to_float<T_data>(decompressed[p], vector_field_scaling_factor);
+							}
+							int decompressed_cp_type = check_cp_type(vf, v, coordinates_d[n], indices);
+							int cell_index = simplex_offset[n] + 6*(i*cell_dim0_offset + j*cell_dim1_offset + k);
+							if(decompressed_cp_type != cp_type[cell_index]){
+								verification_flag = false;
+								break;
+							}
+						}
+					}
+					// relax error bound
+					abs_eb = restrict_eb(abs_eb);
+					if((!verification_flag) && (abs_eb <= max_eb * 1.0/max_factor)){
+						unpred_flag = true;
+						verification_flag = true;					
+					}
+				}
+				ptrdiff_t offset = cur_U_pos - U_fp;
+				if(unpred_flag){
+					*(eb_quant_index_pos ++) = 0;
+					unpred_data.push_back(U[offset]);
+					unpred_data.push_back(V[offset]);
+					unpred_data.push_back(W[offset]);
+				}
+				else{
+					eb_quant_index_pos ++;
+					data_quant_index_pos += 3;
+					*cur_U_pos = decompressed[0];
+					*cur_V_pos = decompressed[1];
+					*cur_W_pos = decompressed[2];
+					dec_U[offset] = convert_fp_to_float<T_data>(decompressed[0], vector_field_scaling_factor);
+					dec_V[offset] = convert_fp_to_float<T_data>(decompressed[1], vector_field_scaling_factor);
+					dec_W[offset] = convert_fp_to_float<T_data>(decompressed[2], vector_field_scaling_factor);
+				}
+				cur_U_pos ++, cur_V_pos ++, cur_W_pos ++;
+			}
+		}
+	}
+	free(dec_U);
+	free(dec_V);
+	free(dec_W);
+	free(U_fp);
+	free(V_fp);
+	free(W_fp);
+	// printf("offset eb_q, data_q, unpred: %ld %ld %ld\n", eb_quant_index_pos - eb_quant_index, data_quant_index_pos - data_quant_index, unpred_data.size());
+	unsigned char * compressed = (unsigned char *) malloc(3*num_elements*sizeof(T));
+	unsigned char * compressed_pos = compressed;
+	write_variable_to_dst(compressed_pos, vector_field_scaling_factor);
+	write_variable_to_dst(compressed_pos, base);
+	write_variable_to_dst(compressed_pos, threshold);
+	write_variable_to_dst(compressed_pos, intv_radius);
+	size_t unpredictable_count = unpred_data.size();
+	write_variable_to_dst(compressed_pos, unpredictable_count);
+	write_array_to_dst(compressed_pos, (T_data *)&unpred_data[0], unpredictable_count);	
+	size_t eb_quant_num = eb_quant_index_pos - eb_quant_index;
+	write_variable_to_dst(compressed_pos, eb_quant_num);
+	Huffman_encode_tree_and_data(2*1024, eb_quant_index, eb_quant_num, compressed_pos);
+	free(eb_quant_index);
+	size_t data_quant_num = data_quant_index_pos - data_quant_index;
+	write_variable_to_dst(compressed_pos, data_quant_num);
+	Huffman_encode_tree_and_data(2*capacity, data_quant_index, data_quant_num, compressed_pos);
+	// printf("pos = %ld\n", compressed_pos - compressed);
+	free(data_quant_index);
+	compressed_size = compressed_pos - compressed;
+	return compressed;	
+}
+
+template
+unsigned char *
+sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all_parallel_lossless_border(const float * U, const float * V, const float * W, size_t r1, size_t r2, size_t r3, size_t& compressed_size, bool transpose, double max_pwr_eb, double max_factor);

@@ -770,8 +770,8 @@ int main(int argc, char **argv)
   size_t result_size = 0;
   double max_eb = atof(argv[7]);
   int option = atoi(argv[8]);
-  if((option != 0) && (option != 1) && (option != 2)){
-    printf("option should be 0 (no protection for borders), 1  (lossless borders), or 2 (optimized error bound derivation)\n");
+  if((option != 0) && (option != 1) && (option != 2) && (option != 3) && (option != 4)){
+    printf("option should be 0 (no protection for borders), 1 (no protcection ST4), 2  (lossless borders), 3 (lossless borders ST4) or 4 (optimized error bound derivation)\n");
     MPI_Finalize();
     exit(0);
   }
@@ -785,7 +785,9 @@ int main(int argc, char **argv)
   if(rank == 0) elapsed_time = -MPI_Wtime();
   // printf("main: sz_compress_cp_preserve_sos_3d_online_fp\n");
   if(option == 0) result = sz_compress_cp_preserve_sos_3d_online_fp(u, v, w, DL, DH, DW, result_size, true, max_eb);
-  else if(option == 1) result = sz_compress_cp_preserve_sos_3d_online_fp_parallel_lossless_border(u, v, w, DL, DH, DW, result_size, true, max_eb);
+  else if(option == 1) result = sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all(u, v, w, DL, DH, DW, result_size, false, max_eb,8);
+  else if(option == 2) result = sz_compress_cp_preserve_sos_3d_online_fp_parallel_lossless_border(u, v, w, DL, DH, DW, result_size, true, max_eb);
+  else if(option == 3) result = sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all_parallel_lossless_border(u, v, w, DL, DH, DW, result_size, false, max_eb,8);
   else result = sz_compress_cp_preserve_sos_3d_online_fp_parallel(u, v, w, DL, DH, DW, result_size, false, max_eb);
   free(u);
   free(v);
@@ -841,7 +843,7 @@ int main(int argc, char **argv)
   float *dec_U = NULL;
   float *dec_V = NULL;
   float *dec_W = NULL;
-  if((option == 0) || (option == 1)) sz_decompress_cp_preserve_3d_online_fp<float>(result, DL, DH, DW, dec_U, dec_V, dec_W);
+  if((option == 0) || (option == 1) || (option == 2) || (option == 3)) sz_decompress_cp_preserve_3d_online_fp<float>(result, DL, DH, DW, dec_U, dec_V, dec_W);
   else sz_decompress_cp_preserve_3d_online_fp_parallel<float>(result, DL, DH, DW, dec_U, dec_V, dec_W);
   MPI_Barrier(MPI_COMM_WORLD);
   if(rank == 0){

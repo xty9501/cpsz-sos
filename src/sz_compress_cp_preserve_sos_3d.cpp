@@ -1321,7 +1321,7 @@ static inline T_data convert_fp_to_float(T_fp fp, T_fp vector_field_scaling_fact
 template<typename T_data>
 unsigned char *
 sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all(const T_data * U, const T_data * V, const T_data * W, size_t r1, size_t r2, size_t r3, size_t& compressed_size, bool transpose, double max_pwr_eb, double max_factor){
-	std::cout << "sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all" << std::endl;
+	// std::cout << "sz_compress_cp_preserve_sos_3d_online_fp_spec_exec_all" << std::endl;
 	using T = int64_t;
 	size_t num_elements = r1 * r2 * r3;
 	T * U_fp = (T *) malloc(num_elements*sizeof(T));
